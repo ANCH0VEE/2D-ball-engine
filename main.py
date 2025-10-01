@@ -20,6 +20,8 @@ display = pygame.Surface(display_mode)
 screen_mode = (int(aspect_ratio * display_height / 2), int(display_height / 2))
 screen = pygame.display.set_mode(screen_mode, pygame.RESIZABLE)
 
+font = pygame.font.Font(None, 40)
+
 class Vector:
     def __init__(self, x, y):
         self.x = x
@@ -49,55 +51,61 @@ class Grid:
 
         # Visible world bounds (left, top, right, bottom)
         view_left = Player.scroll[0]
-        view_top = Player.scroll[1]
         view_right = Player.scroll[0] + display.get_width()
+        
+        view_top = Player.scroll[1]
         view_bottom = Player.scroll[1] + display.get_height()
 
-        # Compute integer ranges of grid indices to draw
+        # integer ranges of grid lines
         # vertical lines: x = k * unit_length
-        k_start = math.floor(view_left / unit_length)
-        k_end = math.ceil(view_right / unit_length)
+        vertical_start = math.floor(view_left / unit_length)
+        vertical_end = math.ceil(view_right / unit_length)
 
-        for k in range(k_start, k_end + 1):
-            x_world = k * unit_length
-            x_screen = x_world - Player.scroll[0]
+        for i in range(vertical_start, vertical_end + 1):
+            x_pos = i*unit_length - Player.scroll[0]
             # draw only if within screen bounds
-            if -1 <= x_screen <= display.get_width() + 1:
-                pygame.draw.line(display, (255,255,255), (x_screen, 0), (x_screen, display.get_height()))
+            if -1 <= x_pos <= display.get_width() + 1:
+                pygame.draw.line(display, (255,255,255), (x_pos, 0), (x_pos, display.get_height()))
 
         # horizontal lines: y = m * unit_length
-        m_start = math.floor(view_top / unit_length)
-        m_end = math.ceil(view_bottom / unit_length)
+        horizontal_start = math.floor(view_top / unit_length)
+        horizontal_end = math.ceil(view_bottom / unit_length)
 
-        for m in range(m_start, m_end + 1):
-            y_world = m * unit_length
-            y_screen = y_world - Player.scroll[1]
-            if -1 <= y_screen <= display.get_height() + 1:
-                pygame.draw.line(display, (255,255,255), (0, y_screen), (display.get_width(), y_screen))
+        for i in range(horizontal_start, horizontal_end + 1):
+            y_pos = i*unit_length - Player.scroll[1]
+            if -1 <= y_pos <= display.get_height() + 1:
+                pygame.draw.line(display, (255,255,255), (0, y_pos), (display.get_width(), y_pos))
 
 class PhysicsBody:
     bodies = []
     template_radius = 0
+    count = 0
     def collided(b1, b2):
-            if(b1.r + b2.r >= b2.pos.subtract(b1.pos).magnitude()):
-                return True
-            return False
+        if(b1.r + b2.r >= b2.pos.subtract(b1.pos).magnitude()):
+            return True
+        return False
     
     def repel(b1, b2):
-        dist = b1.pos.subtract(b2.pos)
-        pen_depth = b1.r + b2.r - dist.magnitude() # negative value
-        pen_res = dist.unit().multiply(pen_depth/2) # each ball separates by this amount in opposite directions (which is why the second ball's code has a multiply(-1).)
+        distance = b1.pos.subtract(b2.pos)
+        depth = b1.r + b2.r - distance.magnitude() # negative value
+
+        mass_ratio = b1.mass/(b1.mass+b2.mass)
+        displacement1 = distance.unit().multiply(depth*(1-mass_ratio)) # each ball separates by this amount in opposite directions (which is why the second ball's code has a multiply(-1).)
+        displacement2 = distance.unit().multiply(depth*(mass_ratio))
         # move the balls apart
-        b1.pos = b1.pos.add(pen_res)        # try swapping the .multiply(-1) for funny
-        b2.pos = b2.pos.add(pen_res.multiply(-1))
+        b1.pos = b1.pos.add(displacement1)        # try swapping the .multiply(-1) for funny
+        b2.pos = b2.pos.add(displacement2.multiply(-1))
 
     def __init__(self, x,y,r, color):
         self.pos = Vector(x,y)
         self.r = r
+        self.mass = self.r**(5/4) # r**3 is too imbalanced. (4/3)*math.pi is just a constant.
         self.color = color
         
         self.vel = Vector(0,0)
         self.acc = Vector(0,0)
+
+        PhysicsBody.count += 1
         
     def render(self):
         pygame.draw.circle(display, self.color, (self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1]), self.r)
@@ -106,7 +114,7 @@ class PhysicsBody:
 
 class Player:
     players = []
-    friction = 0.1
+    friction = 0.15
     scroll = [0,0]
     def __init__(self, x,y,r,color):
         self.x = x
@@ -216,7 +224,10 @@ while True:
     if charging:
         PhysicsBody.template_radius += 2
         pygame.draw.circle(display, (255,255,255), mouse_coords, PhysicsBody.template_radius, 2)
-        
+
+    
+    display.blit(font.render(f"balls: {PhysicsBody.count}", True, (255, 255, 255)), (0,0))
+
     # Update ------------------------------------------------- #
     # scale and blit display onto screen
     scaled = pygame.transform.scale(display, screen.get_size())
