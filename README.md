@@ -9,4 +9,6 @@
 - grid background
 - ball collisions
 - direction and acceleration vector visualizations
-- entity spawning on-click
+- entity spawning on-click and hold
+- entity count displayed at top left
+- entity clearing: "c" key
