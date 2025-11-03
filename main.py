@@ -43,10 +43,8 @@ class Vector:
             return Vector(0,0)
         else:
             return Vector(self.x/self.magnitude(), self.y/self.magnitude())
-    def draw_vector(self, surf, x, y, n, color):
-        # Draw the vector scaled by `n`, but cap its displayed length to `max_length`
-        # `n` is a user-provided scale factor. If max_length is None, no cap is applied.
-        pygame.draw.line(surf, color, (x,y), (x + self.x*n, y + self.y*n), 2)
+    def draw_vector(self, surf, xpos, ypos, n, color):
+        pygame.draw.line(surf, color, (xpos,ypos), (xpos + self.x*n, ypos + self.y*n), 2)
 
 # Grid class: creating and updating a Grid object will render a grid onto the display.
 class Grid:
@@ -84,8 +82,11 @@ class PhysicsBody:
     template_radius = 0
     count = 0
 
-    friction = 0.07
-    restitution = 2
+    # variables to manipulate
+    friction = 0.05
+    restitution = 0.7
+    repel_speed_percentage = 0.05
+    #
 
     def collided(b1, b2):
         if(b1.r + b2.r >= b2.pos.subtract(b1.pos).magnitude()):
@@ -105,8 +106,8 @@ class PhysicsBody:
 
         # Separate the balls based on mass ratio to prevent overlap
         mass_ratio = b1.mass/(b1.mass+b2.mass)
-        dpos1 = collision_normal.multiply(depth*(1-mass_ratio))
-        dpos2 = collision_normal.multiply(depth*(mass_ratio)).multiply(-1)
+        dpos1 = collision_normal.multiply(depth*(1-mass_ratio)).multiply(PhysicsBody.repel_speed_percentage)
+        dpos2 = collision_normal.multiply(depth*(mass_ratio)).multiply(-1).multiply(PhysicsBody.repel_speed_percentage)
         b1.pos = b1.pos.add(dpos1)
         b2.pos = b2.pos.add(dpos2)
 
@@ -157,8 +158,6 @@ class PhysicsBody:
         
         # Update position based on velocity
         self.pos = self.pos.add(self.velocity)
-        # Update displacement for visualization
-        #self.displacement = self.velocity
 
 # Player class: control a red ball (PhysicsBody) with WASD or arrow keys. Camera scrolling included.
 class Player:
@@ -191,7 +190,7 @@ class Player:
             self.movement = self.movement.unit().multiply(self.speed)
         self.ball.velocity = self.ball.velocity.add(self.movement).multiply(1-PhysicsBody.friction)
 
-        self.movement.draw_vector(display, self.ball.pos.x-self.scroll[0], self.ball.pos.y-self.scroll[1], 10, (0,0,0))
+        self.movement.draw_vector(display, self.ball.pos.x-self.scroll[0], self.ball.pos.y-self.scroll[1], self.r, (0,0,0))
 
         # Update the ball's physics - done in main game loop
         #self.ball.update()
