@@ -44,6 +44,8 @@ class Vector:
         else:
             return Vector(self.x/self.magnitude(), self.y/self.magnitude())
     def draw_vector(self, surf, x, y, n, color):
+        # Draw the vector scaled by `n`, but cap its displayed length to `max_length`
+        # `n` is a user-provided scale factor. If max_length is None, no cap is applied.
         pygame.draw.line(surf, color, (x,y), (x + self.x*n, y + self.y*n), 2)
 
 # Grid class: creating and updating a Grid object will render a grid onto the display.
@@ -66,7 +68,7 @@ class Grid:
         for i in range(vertical_start, vertical_end):
             x_pos = i*self.unit_length - Player.scroll[0]
             # draw only if within display bounds
-            pygame.draw.line(display, (255,255,255), (x_pos, 0), (x_pos, display.get_height()))
+            pygame.draw.line(display, (100,100,100), (x_pos, 0), (x_pos, display.get_height()))
 
         # horizontal lines: y = m * unit_length
         horizontal_start = math.floor(view_top/self.unit_length)
@@ -74,13 +76,17 @@ class Grid:
         for i in range(horizontal_start, horizontal_end):
             y_pos = i*self.unit_length - Player.scroll[1]
             # draw only if within display bounds
-            pygame.draw.line(display, (255,255,255), (0, y_pos), (display.get_width(), y_pos))
+            pygame.draw.line(display, (100,100,100), (0, y_pos), (display.get_width(), y_pos))
 
 # PhysicsBody class: a ball. Balls can vary in radius, mass, color, and have collision response.
 class PhysicsBody:
     bodies = []
     template_radius = 0
     count = 0
+
+    friction = 0.07
+    restitution = 2
+
     def collided(b1, b2):
         if(b1.r + b2.r >= b2.pos.subtract(b1.pos).magnitude()):
             return True
@@ -88,15 +94,41 @@ class PhysicsBody:
     
     # on collision, calculates the distance that each ball in a pair need to repel based on the ratio of their masses
     def repel(b1, b2):
-        distance = b1.pos.subtract(b2.pos)
-        depth = b1.r + b2.r - distance.magnitude() # negative value
+        # Avoid self-collision
+        if b1 == b2:
+            return
 
+        # Calculate collision normal and depth
+        distance = b1.pos.subtract(b2.pos)
+        collision_normal = distance.unit()
+        depth = b1.r + b2.r - distance.magnitude()
+
+        # Separate the balls based on mass ratio to prevent overlap
         mass_ratio = b1.mass/(b1.mass+b2.mass)
-        dpos1 = distance.unit().multiply(depth*(1-mass_ratio))
-        dpos2 = distance.unit().multiply(depth*(mass_ratio)).multiply(-1) # repel in opposite direction
-        # move the balls apart
-        b1.pos = b1.pos.add(dpos1)        # try swapping the .multiply(-1) for funny
+        dpos1 = collision_normal.multiply(depth*(1-mass_ratio))
+        dpos2 = collision_normal.multiply(depth*(mass_ratio)).multiply(-1)
+        b1.pos = b1.pos.add(dpos1)
         b2.pos = b2.pos.add(dpos2)
+
+        # Calculate relative velocity
+        relative_velocity = b1.velocity.subtract(b2.velocity)
+        
+        # Calculate velocity along normal
+        velocity_along_normal = (relative_velocity.x * collision_normal.x + 
+                               relative_velocity.y * collision_normal.y)
+        
+        # Don't process collision if objects are moving apart
+        if velocity_along_normal > 0:
+            return
+
+        # Calculate impulse scalar
+        j = -(1 + PhysicsBody.restitution) * velocity_along_normal
+        j /= 1/b1.mass + 1/b2.mass
+
+        # Apply impulse
+        impulse = collision_normal.multiply(j)
+        b1.velocity = b1.velocity.add(impulse.multiply(1/b1.mass))
+        b2.velocity = b2.velocity.add(impulse.multiply(-1/b2.mass))
 
     def __init__(self, x,y,r, color):
         self.pos = Vector(x,y)
@@ -104,20 +136,34 @@ class PhysicsBody:
         self.mass = self.r**(5/4) # r**3 is too imbalanced, raise to 5/4. (4/3)*math.pi is just a constant.
         self.color = color
         
-        self.displacement = Vector(0,0)
+        #self.displacement = Vector(0,0)
         self.velocity = Vector(0,0)
 
         PhysicsBody.count += 1
 
     def render(self):
         pygame.draw.circle(display, self.color, (self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1]), self.r)
-        self.velocity.draw_vector(display, self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1], 30, (0,0,0))
-        self.displacement.draw_vector(display, self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1], 10, (255,255,255))
+        self.velocity.draw_vector(display, self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1], 10, (255,255,255))
+
+    def update(self):
+        # Apply friction to velocity
+        if self.velocity.magnitude() > 0:
+            friction_force = self.velocity.multiply(-1*PhysicsBody.friction)
+            self.velocity = self.velocity.add(friction_force)
+            
+            # Stop if very slow
+            if self.velocity.magnitude() < 0.1:
+                self.velocity = Vector(0, 0)
+        
+        # Update position based on velocity
+        self.pos = self.pos.add(self.velocity)
+        # Update displacement for visualization
+        #self.displacement = self.velocity
 
 # Player class: control a red ball (PhysicsBody) with WASD or arrow keys. Camera scrolling included.
 class Player:
     players = []
-    friction = 0.15
+    # range from 0 to 1
     scroll = [0,0]
     def __init__(self, x,y,r,color):
         self.x = x
@@ -126,25 +172,32 @@ class Player:
         self.color = color
 
         self.direction = {'up': False, 'left': False, 'down': False, 'right': False}
+        self.movement = Vector(0,0)
         self.speed = 1
 
         self.ball = PhysicsBody(self.x, self.y, self.r, self.color)
         PhysicsBody.bodies.append(self.ball)
 
     def update(self):
-        self.ball.velocity = Vector(0,0)
-        if(self.direction['left']):self.ball.velocity.x = -self.speed
-        if(self.direction['up']):self.ball.velocity.y = -self.speed
-        if(self.direction['right']):self.ball.velocity.x = self.speed
-        if(self.direction['down']):self.ball.velocity.y = self.speed
-        
-        self.ball.velocity=self.ball.velocity.unit().multiply(self.speed) # velocity magnitude: speed
-        self.ball.displacement=self.ball.displacement.add(self.ball.velocity) # add velocity to displacement, displacement is what you see moves the ball position (line after next line)
-        self.ball.displacement=self.ball.displacement.multiply(1-Player.friction) # add friction to stop infinite acceleration
-        self.ball.pos=self.ball.pos.add(self.ball.displacement) # add displacement to pos
+        # Create movement vector based on input
+        self.movement = Vector(0,0)
+        if self.direction['left']: self.movement.x -= self.speed
+        if self.direction['right']: self.movement.x += self.speed
+        if self.direction['up']: self.movement.y -= self.speed
+        if self.direction['down']: self.movement.y += self.speed
+
+        # Apply movement force to velocity
+        if self.movement.magnitude() > 0:
+            self.movement = self.movement.unit().multiply(self.speed)
+        self.ball.velocity = self.ball.velocity.add(self.movement).multiply(1-PhysicsBody.friction)
+
+        self.movement.draw_vector(display, self.ball.pos.x-self.scroll[0], self.ball.pos.y-self.scroll[1], 10, (0,0,0))
+
+        # Update the ball's physics - done in main game loop
+        #self.ball.update()
 
 # create entities on load
-grid = Grid(40)
+grid = Grid(100)
 player = Player(100,100,25,(255,0,0))
 Player.players.append(player)
 
@@ -219,16 +272,16 @@ while True:
     display.fill((0,0,0))
     grid.draw_grid()
     pygame.draw.circle(display, (255,0,0), (0-Player.scroll[0],0-Player.scroll[1]), 5)
-
-    for player in Player.players:
-        player.update()
         
     for body in PhysicsBody.bodies:
-        body.render()
-        
+        body.update()
         for i in range(len(PhysicsBody.bodies)):
             if (PhysicsBody.collided(body,PhysicsBody.bodies[i])):
                 PhysicsBody.repel(body, PhysicsBody.bodies[i])
+    for body in PhysicsBody.bodies:
+        body.render()
+    for player in Player.players:
+        player.update()
 
     # draw an expanding "blueprint" of a ball when charging (holding down mouse button)
     if charging:
