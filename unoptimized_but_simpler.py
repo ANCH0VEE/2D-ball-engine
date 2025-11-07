@@ -1,9 +1,6 @@
-# A more optimized 2D ball engine
-# 1. Filters out off-screen balls, so only on-screen ones are rendered.
-# 2. Uses spatial hashing to reduce the brute-force O(n^2) running time of collision resolution (quadratic growth in run time for every new ball created: problematic in large numbers without optimization)
-# Partitions map into grid cells of side length of largest ball's diameter
-# Checks collisions normally, but with a smaller group that consists only of balls contained within neighboring grid cells.
-# Better performance with larger ball quantities, especially when smaller and more spread out. Balls too large still cause significant increase in run-time.
+# Unoptimized, but simpler code
+# Uses a brute-force method for collision resolution: O(n^2) running time (quadratic growth in run time for every new ball created: problematic in large numbers without optimization)
+# Works well with few balls, not in large quantities.
 
 # modules
 import pygame
@@ -33,9 +30,7 @@ screen = pygame.display.set_mode(screen_mode, pygame.RESIZABLE)
 font = pygame.font.Font(None, 30)
 
 # GridLine class: creating and updating a GridLine object will render a grid onto the display.
-# NOT to be confused with grid positions created in spatial partitioning.
 class GridLine:
-    unit_length = 100
     def __init__(self, unit_length):
         self.unit_length = unit_length
 
@@ -72,7 +67,7 @@ class PhysicsBody:
 
     # variables to manipulate to alter ball interaction
     # all ideally between 0 and 1, but feel free to experiment around with these.
-    friction = 0.04
+    friction = 0.1
     # 0 =< restitution < 1: inelastic; restitution = 1: elastic: restitution > 1: superelastic
     restitution = 0.7 # we set an initial resitution because we want to have control over the speed of balls after collisions, and thus "bounciness".
     repel_speed_percentage = 0.1
@@ -115,10 +110,9 @@ class PhysicsBody:
 
     def __init__(self, pos ,r, color):
         self.pos = Vector(pos[0],pos[1])
-        self.r = r  # Set radius before calculating grid position
-        self.mass = self.r**(3/2) # r**3 or r**2 feels too imbalanced, raise to power of 3/2. (4/3)*math.pi is just a constant. TODO: PROVE CONSTANTS CANCEL IN CALCULATION
+        self.r = r
+        self.mass = self.r**(5/4) # r**3 is too imbalanced, raise to 5/4. (4/3)*math.pi is just a constant.
         self.color = color
-        self.all_gridpos = self.recalculate_gridpos(largest)  # Calculate grid position after radius is set
         
         #self.displacement = Vector(0,0)
         self.velocity = Vector(0,0)
@@ -128,21 +122,6 @@ class PhysicsBody:
     def render(self):
         pygame.draw.circle(display, self.color, (self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1]), self.r)
         self.velocity.draw_vector(display, self.pos.x-Player.scroll[0], self.pos.y-Player.scroll[1], 10, (255,255,255))
-
-    def recalculate_gridpos(self, grid_size):
-        # Calculate the grid cells the ball overlaps
-        # Get the bounding box of the ball
-        left = (self.pos.x - self.r) // grid_size
-        right = (self.pos.x + self.r) // grid_size
-        top = (self.pos.y - self.r) // grid_size
-        bottom = (self.pos.y + self.r) // grid_size
-        
-        # Generate all grid positions the ball overlaps
-        grid_positions = []
-        for x in range(int(left), int(right) + 1):
-            for y in range(int(top), int(bottom) + 1):
-                grid_positions.append((x, y))
-        return grid_positions
 
     def update(self):
         # Apply friction to velocity
@@ -162,8 +141,9 @@ class Player:
     players = []
     # range from 0 to 1
     scroll = [0,0]
-    def __init__(self, pos, r,color):
-        self.pos = Vector(pos[0],pos[1])
+    def __init__(self, pos,r ,color):
+        self.x = pos[0]
+        self.y = pos[1]
         self.r = r
         self.color = color
 
@@ -171,7 +151,7 @@ class Player:
         self.movement = Vector(0,0)
         self.speed = 1
 
-        self.ball = PhysicsBody((self.pos.x, self.pos.y), self.r, self.color)
+        self.ball = PhysicsBody((self.x, self.y), self.r, self.color)
         PhysicsBody.bodies.append(self.ball)
 
     def update(self):
@@ -192,75 +172,8 @@ class Player:
         # Update the ball's physics - done in main game loop
         #self.ball.update()
 
-#############
-# largest diameter in ball list will be the grid size 
-largest = 2*125
-
-#(x,y): [balls]
-grid = {}
-
-'''def hash_ball_gridpos(ball):
-    # Recalculate and store the ball's grid position then add it to that cell
-    ball.gridpos = ball.recalculate_gridpos(largest)
-    grid.setdefault(ball.gridpos, []).append(ball)
-'''
-
-# Spatial hashing
-def rehash_all_ball_gridpos():
-    # Clear the grid and re-insert every ball into the correct cells.
-    grid.clear()
-    # Add each ball to all grid cells it overlaps
-    for b in PhysicsBody.bodies:
-        # Now gridpos is a list of all grid cells the ball overlaps
-        grid_positions = b.recalculate_gridpos(largest)
-        b.all_gridpos = grid_positions  # Store all positions
-        # Add ball to all grid cells it overlaps
-        for pos in grid_positions:
-            grid.setdefault(pos, []).append(b)
-
-neighbor_offset = [(-1,-1), (0,-1), (1,-1),
-                   (-1,0), (0,0), (1,0),
-                   (-1,1), (0,1), (1,1)]
-
-def filter_ball(ball, list):
-    # Given a ball and the grid dictionary, return a flat list of neighboring balls
-    # located in all cells the ball occupies and their surrounding cells.
-    neighbors = []
-    # For each cell the ball occupies
-    for pos in ball.all_gridpos:
-        # Check that cell and its neighbors
-        for offset in neighbor_offset:
-            # to visualize existing grid positions
-            #pygame.draw.rect(display, (0,100,0), Rect(pos[0]*largest-Player.scroll[0], pos[1]*largest-player.scroll[1], largest,largest))
-            #pygame.draw.circle(display, (255,255,255), (pos[0]*largest-Player.scroll[0], pos[1]*largest-player.scroll[1]), 2)
-            check_loc = (pos[0] + offset[0], pos[1] + offset[1])
-            if check_loc in list:
-                # extend with the balls present in this cell
-                neighbors.extend(list[check_loc])
-
-    # Remove self and duplicates
-    result = []
-    for b in neighbors:
-        if b != ball and not (b in result):
-            result.append(b)
-    return result
-
-def filter_onscreen_tiles():
-    onscreen_tiles = []
-    # visible grid bounds
-    left = int(Player.scroll[0] // largest)
-    right = int((Player.scroll[0] + display.get_width()) // largest)
-    top = int(Player.scroll[1] // largest)
-    bottom = int((Player.scroll[1] + display.get_height()) // largest)
-
-    for x in range(left, right + 1):
-        for y in range(top, bottom + 1):
-            if (x, y) in grid:
-                onscreen_tiles.extend(grid[(x, y)])
-    return onscreen_tiles
-
 # create entities on load
-gridlines = GridLine(GridLine.unit_length)
+gridlines = GridLine(100)
 player = Player((150,150),25,(255,0,0))
 Player.players.append(player)
 
@@ -270,10 +183,7 @@ PhysicsBody.bodies.append(PhysicsBody((110,0),50,(255,0,255)))
 PhysicsBody.bodies.append(PhysicsBody((260,0),100,(100,255,100)))
 PhysicsBody.bodies.append(PhysicsBody((485,0),125,(215,200,255)))
 
-# build initial grid hash
-rehash_all_ball_gridpos()
-
-#########
+# 
 charging = False
 # loop
 while True:
@@ -325,7 +235,6 @@ while True:
             if event.key == K_c:
                 PhysicsBody.bodies = [player.ball]
                 PhysicsBody.count=1
-                largest = 2*player.r
 
         if event.type == MOUSEBUTTONDOWN:
             if event.button == 1:
@@ -334,15 +243,12 @@ while True:
         if event.type == MOUSEBUTTONUP:
             if event.button == 1:
                 if (PhysicsBody.template_radius > 0.1):
-                    new = PhysicsBody(
+                    PhysicsBody.bodies.append(PhysicsBody(
                         (mouse_coords[0]+Player.scroll[0], mouse_coords[1]+Player.scroll[1]),
                         PhysicsBody.template_radius,
                         #(215,200,255)
                         tuple(random.randint(0, 255) for i in range(3))
-                    )
-                    PhysicsBody.bodies.append(new)
-                    if (2*PhysicsBody.template_radius > largest):
-                        largest = 2*PhysicsBody.template_radius
+                    ))
                 PhysicsBody.template_radius = 0
                 charging = False
     
@@ -351,25 +257,15 @@ while True:
     gridlines.draw_grid()
     pygame.draw.circle(display, (255,0,0), (0-Player.scroll[0],0-Player.scroll[1]), 5)
         
-    # Update physics and check collisions only against neighboring cells
-    for ball in PhysicsBody.bodies:
-        ball.update()
-        for other_ball in filter_ball(ball, grid):
-            # avoid duplicate pair checks in separate iterations of loop: only handle each unordered pair once
-            if id(ball) >= id(other_ball):
-                continue
-            if PhysicsBody.collided(ball, other_ball):
-                PhysicsBody.repel(ball, other_ball)
-                
-    # render only onscreen balls
-    for body in filter_onscreen_tiles():
+    for body in PhysicsBody.bodies:
+        body.update()
+        for i in range(len(PhysicsBody.bodies)):
+            if (PhysicsBody.collided(body,PhysicsBody.bodies[i])):
+                PhysicsBody.repel(body, PhysicsBody.bodies[i])
+    for body in PhysicsBody.bodies:
         body.render()
-    #player.ball.render()
-
     for player in Player.players:
         player.update()
-
-    rehash_all_ball_gridpos()
 
     # draw an expanding "blueprint" of a ball when charging (holding down mouse button)
     if charging:
@@ -377,6 +273,7 @@ while True:
         pygame.draw.circle(display, (255,255,255), mouse_coords, PhysicsBody.template_radius, 2)
     
     # display ball count
+# display ball count
     display.blit(font.render(f"balls: {PhysicsBody.count}", True, (255, 255, 255)), (0,0))
     display.blit(font.render(f"fps: {int(clock.get_fps())}", True, (255, 255, 255)), (0,20))
     #pygame.draw.circle(display, (255,0,0), (mouse_coords[0],mouse_coords[1]), 5)
