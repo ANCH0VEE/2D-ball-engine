@@ -11,7 +11,7 @@ from utils import Vector
 #initialize
 pygame.init()
 clock = pygame.time.Clock()
-pygame.display.set_caption("pygame 2D ball physics")
+pygame.display.set_caption("2D ball engine")
 
 # screen dimensions/aspect ratios
 display_info = pygame.display.Info()
@@ -67,8 +67,12 @@ class PhysicsBody:
 
     # variables to manipulate to alter ball interaction
     # all ideally between 0 and 1, but feel free to experiment around with these.
-    friction = 0.1
-    # 0 =< restitution < 1: inelastic; restitution = 1: elastic: restitution > 1: superelastic
+    friction = 0.05
+    # restitution = 0: perfectly inelastic (not bouncy)
+    # 0 < restitution < 1: inelastic (a bit bouncy)
+    # restitution = 1: perfectly elastic (bouncy)
+    # restitution > 1: superelastic (extreme bounciness)
+    # restitution < 0: objects pass through each other
     restitution = 0.7 # we set an initial resitution because we want to have control over the speed of balls after collisions, and thus "bounciness".
     repel_speed_percentage = 0.1
     ##
@@ -169,9 +173,6 @@ class Player:
 
         self.movement.draw_vector(display, self.ball.pos.x-self.scroll[0], self.ball.pos.y-self.scroll[1], self.r, (0,0,0))
 
-        # Update the ball's physics - done in main game loop
-        #self.ball.update()
-
 # create entities on load
 gridlines = GridLine(100)
 player = Player((150,150),25,(255,0,0))
@@ -183,9 +184,9 @@ PhysicsBody.bodies.append(PhysicsBody((110,0),50,(255,0,255)))
 PhysicsBody.bodies.append(PhysicsBody((260,0),100,(100,255,100)))
 PhysicsBody.bodies.append(PhysicsBody((485,0),125,(215,200,255)))
 
-# 
 charging = False
-# loop
+
+# main loop
 while True:
     # handling mouse position
     # mouse positions according to changing display dimensions
@@ -246,7 +247,6 @@ while True:
                     PhysicsBody.bodies.append(PhysicsBody(
                         (mouse_coords[0]+Player.scroll[0], mouse_coords[1]+Player.scroll[1]),
                         PhysicsBody.template_radius,
-                        #(215,200,255)
                         tuple(random.randint(0, 255) for i in range(3))
                     ))
                 PhysicsBody.template_radius = 0
@@ -281,6 +281,5 @@ while True:
     # scale and blit display onto screen
     scaled = pygame.transform.scale(display, screen.get_size())
     screen.blit(scaled, (0, 0))
-    #screen.blit(display, (0,0))
     pygame.display.update()
     clock.tick(60)
