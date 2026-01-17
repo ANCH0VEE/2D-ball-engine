@@ -1,10 +1,8 @@
 # Simple Pygame 2D Ball Engine:
 - A simple ball engine to simulate collisions between circular entities.
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/R0Lih2EsF6E" 
-title="YouTube video player" frameborder="0" 
-allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-allowfullscreen></iframe>
+Video:
+[![Watch the video on YouTube](https://img.youtube.com/vi/R0Lih2EsF6E/hqdefault.jpg)](https://youtu.be/R0Lih2EsF6E)
 
 ## Features:
 - Smooth vector-based movement and momentum-like behavior.
